@@ -150,6 +150,44 @@ emitting separate symbols for classes, interfaces and traits."
                  (semantic-tag-type-members tag)))
         (t nil)))
 
+(defun semantic-php--push-tag-with-braceless (tag-table tag)
+  "Handle braceless namespaces by growing TAG-TABLE with TAG.
+
+If the last tag of TAG-TABLE is a braceless namespace, insert
+TAG as a member of it.  Otherwise, just put TAG at the
+end of TAG-TABLE."
+  (let ((last-tag (car (last tag-table)))
+        members)
+    (if (and last-tag (semantic-tag-get-attribute last-tag :braceless))
+        (progn
+          (setq members (semantic-tag-type-members last-tag))
+          (push tag members)
+          (semantic-tag-put-attribute last-tag :members members)
+          tag-table)
+      (push tag tag-table))))
+
+(defun semantic-php-expand-braceless-tags (tag-table)
+  "Include all tags following a braceless type in its members.
+
+TAG-TABLE is the list of tags on which looking for braceless tags
+and merging the next siblings.
+
+It returns a new tag list."
+  (let ((expanded-tag-table '()))
+    (dolist (tag tag-table)
+      (setq expanded-tag-table (semantic-php--push-tag-with-braceless expanded-tag-table tag)))
+    expanded-tag-table))
+
+(define-mode-local-override semantic-parse-region
+  php-mode (start end &optional nonterminal depth returnonerror)
+  "Overrides `semantic-parse-region' to apply some post-processing to the result.
+
+When this is a full reparse, merge braceless statements."
+  (let ((raw-result (semantic-parse-region-default start end nonterminal depth returnonerror)))
+       (if (and (= start (point-min)) (= end (point-max)))
+           (semantic-php-expand-braceless-tags raw-result)
+         raw-result)))
+
 (define-mode-local-override semantic-get-local-variables
   php-mode (&optional point)
   "Get local values from the context of point.
